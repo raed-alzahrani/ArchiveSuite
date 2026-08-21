@@ -84,7 +84,7 @@ def convert_to_icon(src_image, out_icon):
         img = Image.open(src_image).convert("RGBA")
         dim = min(img.size)
         left = (img.width - dim) // 2
-        top = (img.height - dim) // 2
+        top = (height - dim) // 2 if 'height' in locals() else (img.height - dim) // 2
         cropped = img.crop((left, top, left + dim, top + dim))
         cropped.save(out_icon, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
         return True
@@ -94,17 +94,28 @@ def convert_to_icon(src_image, out_icon):
 
 def create_shortcut(target, destination, icon_path=None):
     try:
-        cmd = (
-            f'$ws = New-Object -ComObject WScript.Shell; '
-            f'$s = $ws.CreateShortcut("{destination}"); '
-            f'$s.TargetPath = "{target}"; '
-            f'$s.WorkingDirectory = "{os.path.dirname(target)}"; '
-        )
-        if icon_path and os.path.exists(icon_path):
-            cmd += f'$s.IconLocation = "{icon_path}"; '
-        cmd += '$s.Save()'
-        subprocess.run(["powershell", "-NoProfile", "-Command", cmd], creationflags=0x08000000 if sys.platform == "win32" else 0)
-        return True
+        working_dir = os.path.dirname(target)
+        icon_line = f'oLink.IconLocation = "{icon_path}"' if (icon_path and os.path.exists(icon_path)) else ""
+        vbs_script = f'''
+        Set oWS = WScript.CreateObject("WScript.Shell")
+        sLinkFile = "{destination}"
+        Set oLink = oWS.CreateShortcut(sLinkFile)
+        oLink.TargetPath = "{target}"
+        oLink.WorkingDirectory = "{working_dir}"
+        oLink.Description = "Archive Suite"
+        {icon_line}
+        oLink.Save
+        '''
+        vbs_path = os.path.join(os.environ.get("TEMP", os.path.expanduser("~")), "_make_shortcut.vbs")
+        with open(vbs_path, "w", encoding="utf-8") as f:
+            f.write(vbs_script)
+            
+        subprocess.run(["wscript", vbs_path], creationflags=0x08000000 if sys.platform == "win32" else 0)
+        
+        if os.path.exists(vbs_path):
+            os.remove(vbs_path)
+            
+        return os.path.exists(destination)
     except Exception:
         return False
 
@@ -226,7 +237,6 @@ class ArchiveSuiteApp(ctk.CTk):
         sys.exit()
 
     def setup_ui(self):
-        # Header Controls
         self.header = ctk.CTkFrame(self, corner_radius=10)
         self.header.pack(fill="x", padx=16, pady=(12, 6))
 
@@ -264,7 +274,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.mode_selector = ctk.CTkSegmentedButton(mode_row, values=["Extract Mode", "Compress Mode"], height=36, command=self.handle_mode_change)
         self.mode_selector.pack(fill="x", expand=True)
 
-        # Directory Selector
         self.dir_frame = ctk.CTkFrame(self, corner_radius=8)
         self.dir_frame.pack(fill="x", padx=16, pady=4)
 
@@ -278,7 +287,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.btn_browse = ctk.CTkButton(self.dir_frame, text="Browse", width=100, fg_color="#334155", hover_color="#475569", command=self.choose_directory)
         self.btn_browse.pack(side="right", padx=(6, 12), pady=8)
 
-        # Settings Panel
         self.opts_frame = ctk.CTkFrame(self, corner_radius=8)
         self.opts_frame.pack(fill="x", padx=16, pady=4)
         self.opts_frame.grid_columnconfigure((0, 1), weight=1)
@@ -308,14 +316,12 @@ class ArchiveSuiteApp(ctk.CTk):
         )
         self.level_dropdown.set(self.config.get("comp_level", "Ultra (9)"))
 
-        # File List
         self.list_title = ctk.CTkLabel(self, text="Target Items:", anchor="w")
         self.list_title.pack(fill="x", padx=20, pady=(6, 2))
 
         self.scroll_area = ctk.CTkScrollableFrame(self, height=180, corner_radius=8)
         self.scroll_area.pack(fill="both", expand=True, padx=16, pady=4)
 
-        # Progress & Logs
         self.progress_bar = ctk.CTkProgressBar(self, height=10, corner_radius=4)
         self.progress_bar.set(0)
         self.progress_bar.pack(fill="x", padx=16, pady=(6, 4))
@@ -323,7 +329,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.log_view = ctk.CTkTextbox(self, height=130, font=("Consolas", 10), corner_radius=8)
         self.log_view.pack(fill="both", padx=16, pady=(2, 8))
 
-        # Bottom Bar
         bottom_bar = ctk.CTkFrame(self, fg_color="transparent")
         bottom_bar.pack(fill="x", padx=16, pady=(0, 12))
 
@@ -422,10 +427,22 @@ class ArchiveSuiteApp(ctk.CTk):
             self.refresh_list()
 
     def create_desktop_shortcut(self):
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop", "Archive Suite.lnk")
+        desktop_dir = ""
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+            desktop_dir, _ = winreg.QueryValueEx(key, "Desktop")
+            desktop_dir = os.path.expandvars(desktop_dir)
+        except Exception:
+            desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+
+        desktop_lnk = os.path.join(desktop_dir, "Archive Suite.lnk")
         icon = ICON_PATH if os.path.exists(ICON_PATH) else None
-        if create_shortcut(os.path.abspath(__file__), desktop, icon):
-            messagebox.showinfo("Success", "Shortcut created on Desktop.")
+
+        if create_shortcut(os.path.abspath(__file__), desktop_lnk, icon):
+            messagebox.showinfo("Success", f"Shortcut created on Desktop:\n{desktop_lnk}")
+        else:
+            messagebox.showerror("Error", "Could not create shortcut. Check permissions.")
 
     def update_icon(self):
         file = filedialog.askopenfilename(filetypes=IMAGE_FORMATS)
@@ -525,8 +542,8 @@ class ArchiveSuiteApp(ctk.CTk):
                             if os.path.isfile(item_path): z.write(item_path, arcname=item)
                             else:
                                 for root, _, files in os.walk(item_path):
-                                    for f in files:
-                                        fp = os.path.join(root, f)
+                                    for file in files:
+                                        fp = os.path.join(root, file)
                                         z.write(fp, arcname=os.path.join(item, os.path.relpath(fp, item_path)))
                     elif fmt == ".7z":
                         subprocess.run(["7z", "a", "-t7z", f"-mx={level}", out_archive, item_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
