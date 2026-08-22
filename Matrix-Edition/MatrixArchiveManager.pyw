@@ -7,23 +7,21 @@ import threading
 import zipfile
 from tkinter import filedialog, messagebox
 
-# Verify core dependencies before initializing the UI
+# Auto-check dependencies
 REQUIRED_LIBS = {
     "customtkinter": "customtkinter",
     "PIL": "pillow",
     "py7zr": "py7zr"
 }
 
-def check_missing_dependencies():
-    missing = []
-    for mod_name, pip_name in REQUIRED_LIBS.items():
-        try:
-            __import__(mod_name)
-        except ImportError:
-            missing.append(pip_name)
-    return missing
+missing = []
+for mod, pkg in REQUIRED_LIBS.items():
+    try:
+        __import__(mod)
+    except ImportError:
+        missing.append(pkg)
 
-def launch_dependency_installer_wizard(missing_pkgs):
+if missing:
     import tkinter as tk
 
     root = tk.Tk()
@@ -34,39 +32,46 @@ def launch_dependency_installer_wizard(missing_pkgs):
 
     ws = root.winfo_screenwidth()
     hs = root.winfo_screenheight()
-    x = (ws / 2) - (500 / 2)
-    y = (hs / 2) - (300 / 2)
-    root.geometry(f"500x300+{int(x)}+{int(y)}")
+    root.geometry(f"500x300+{int((ws-500)/2)}+{int((hs-300)/2)}")
 
     tk.Label(root, text="[!] MISSING SYSTEM DEPENDENCIES", font=("Consolas", 13, "bold"), fg="#ff3355", bg="#080b0e").pack(pady=(20, 8))
     tk.Label(root, text="The following required Python libraries were not located:", font=("Segoe UI", 10), fg="#94a3b8", bg="#080b0e").pack()
 
     list_frame = tk.Frame(root, bg="#0e161c", bd=1, relief="solid")
     list_frame.pack(fill="x", padx=30, pady=12)
-    for pkg in missing_pkgs:
+    for pkg in missing:
         tk.Label(list_frame, text=f"• {pkg}", font=("Consolas", 11, "bold"), fg="#00ff66", bg="#0e161c").pack(anchor="w", padx=15, pady=3)
 
     def install_and_restart():
         root.destroy()
-        pkgs_str = " ".join(missing_pkgs)
-        cmd = f'"{sys.executable}" -m pip install --upgrade pip {pkgs_str} && pause'
-        subprocess.run(f'start cmd /c "{cmd}"', shell=True)
+        py_exe = sys.executable
+        if py_exe.lower().endswith("pythonw.exe"):
+            py_exe = py_exe[:-10] + "python.exe"
+
         script_path = os.path.abspath(__file__)
-        subprocess.Popen([sys.executable.replace("python.exe", "pythonw.exe"), script_path], creationflags=0x08000000 if sys.platform == "win32" else 0)
+        bat_cmd = f"""@echo off
+title Installing Dependencies...
+echo [*] Installing missing packages: {" ".join(missing)}
+"{py_exe}" -m pip install --upgrade pip {" ".join(missing)}
+echo.
+echo [*] Launching application...
+start "" "{sys.executable}" "{script_path}"
+exit
+"""
+        bat_file = os.path.join(os.environ.get("TEMP", "."), "_install_matrix_deps.bat")
+        with open(bat_file, "w", encoding="utf-8") as f:
+            f.write(bat_cmd)
+        
+        subprocess.Popen(f'start "" "{bat_file}"', shell=True)
         sys.exit()
 
     btn_frame = tk.Frame(root, bg="#080b0e")
     btn_frame.pack(fill="x", padx=30, pady=(10, 15))
-
     tk.Button(btn_frame, text="EXIT", font=("Segoe UI", 10, "bold"), bg="#1e293b", fg="#ffffff", bd=0, padx=15, pady=6, command=sys.exit).pack(side="left")
     tk.Button(btn_frame, text="[► INSTALL DEPENDENCIES & LAUNCH]", font=("Segoe UI", 10, "bold"), bg="#005a24", fg="#00ff66", bd=0, padx=15, pady=6, command=install_and_restart).pack(side="right")
 
     root.mainloop()
     sys.exit()
-
-missing = check_missing_dependencies()
-if missing:
-    launch_dependency_installer_wizard(missing)
 
 from PIL import Image
 import customtkinter as ctk
@@ -166,7 +171,6 @@ def make_desktop_shortcut(target, link_path, icon_path=None):
             f.write(vbs_script)
             
         subprocess.run(["wscript", vbs_path], creationflags=0x08000000 if sys.platform == "win32" else 0)
-        
         if os.path.exists(vbs_path):
             os.remove(vbs_path)
             
@@ -175,30 +179,89 @@ def make_desktop_shortcut(target, link_path, icon_path=None):
         return False
 
 class HotCodeUpdaterModal(ctk.CTkToplevel):
-    def __init__(self, parent, target_file, restart_callback):
+    def __init__(self, parent, target_file, restart_callback, theme_color="Green", appearance_mode="Dark"):
         super().__init__(parent)
         self.title("Matrix Hot-Code Engine Overhaul")
-        self.geometry("840x620")
+        self.geometry("860x620")
         self.target_file = target_file
         self.restart_callback = restart_callback
-        self.configure(fg_color="#080b0e")
+        self.palette = THEME_PALETTES.get(theme_color, THEME_PALETTES["Green"])
+        
+        bg_color = "#080b0e" if appearance_mode == "Dark" else "#e2e8f0"
+        self.configure(fg_color=bg_color)
         self.transient(parent)
         self.grab_set()
-        self._build_ui()
 
-    def _build_ui(self):
-        lbl = ctk.CTkLabel(self, text="[❖] PASTE UPDATED PYTHON CODE PAYLOAD:", font=("Consolas", 14, "bold"), text_color="#00ff66")
-        lbl.pack(anchor="w", padx=20, pady=(16, 4))
+        pri = self.palette["primary"]
+        txt_main = "#ffffff" if appearance_mode == "Dark" else "#0f172a"
+        inner_bg = "#050709" if appearance_mode == "Dark" else "#f1f5f9"
 
-        self.txt_code = ctk.CTkTextbox(self, font=("Consolas", 11), fg_color="#050709", border_color="#00ff66", border_width=1, text_color="#f8fafc")
+        header_box = ctk.CTkFrame(self, fg_color="transparent")
+        header_box.pack(fill="x", padx=20, pady=(16, 6))
+
+        lbl = ctk.CTkLabel(header_box, text="[❖] CODE PAYLOAD INJECTION / EXPORT:", font=("Consolas", 13, "bold"), text_color=pri)
+        lbl.pack(side="left")
+
+        actions_box = ctk.CTkFrame(header_box, fg_color="transparent")
+        actions_box.pack(side="right")
+
+        ctk.CTkButton(
+            actions_box, text="📋 COPY CODE", width=120, height=28,
+            font=("Segoe UI", 11, "bold"), fg_color="#1e293b",
+            hover_color="#334155", text_color="#ffffff", command=self.copy_current_code
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            actions_box, text="📥 PASTE CODE", width=120, height=28,
+            font=("Segoe UI", 11, "bold"), fg_color=self.palette["dark_bg"],
+            hover_color=self.palette["hover"], text_color=pri if appearance_mode == "Dark" else "#ffffff", command=self.paste_from_clipboard
+        ).pack(side="left")
+
+        self.txt_code = ctk.CTkTextbox(
+            self, font=("Consolas", 11), fg_color=inner_bg,
+            border_color=pri, border_width=1, text_color=txt_main, undo=True
+        )
         self.txt_code.pack(fill="both", expand=True, padx=20, pady=8)
+
+        try:
+            with open(self.target_file, "r", encoding="utf-8") as f:
+                self.txt_code.insert("1.0", f.read())
+        except Exception:
+            pass
+
+        self.txt_code.bind("<Control-v>", lambda _: self.paste_from_clipboard() or "break")
+        self.txt_code.bind("<Control-V>", lambda _: self.paste_from_clipboard() or "break")
 
         btn_box = ctk.CTkFrame(self, fg_color="transparent")
         btn_box.pack(fill="x", padx=20, pady=(0, 16))
 
         ctk.CTkButton(btn_box, text="CANCEL", width=110, font=("Segoe UI", 11, "bold"), fg_color="#1e293b", command=self.destroy).pack(side="left")
-        ctk.CTkButton(btn_box, text="[► INJECT CODE & RESTART INSTANCE]", font=("Segoe UI", 12, "bold"), fg_color="#005a24", hover_color="#008033", 
-                       border_width=1, border_color="#00ff66", text_color="#00ff66", command=self.apply_update).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        ctk.CTkButton(
+            btn_box, text="[► INJECT CODE & RESTART INSTANCE]", font=("Segoe UI", 12, "bold"),
+            fg_color=self.palette["dark_bg"], hover_color=self.palette["dark_hover"],
+            border_width=1, border_color=pri, text_color=pri if appearance_mode == "Dark" else "#ffffff",
+            command=self.apply_update
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
+
+    def copy_current_code(self):
+        try:
+            with open(self.target_file, "r", encoding="utf-8") as f:
+                code_data = f.read()
+            self.clipboard_clear()
+            self.clipboard_append(code_data)
+            self.update()
+            messagebox.showinfo("Clipboard", "Complete application code copied to clipboard!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read source: {e}")
+
+    def paste_from_clipboard(self):
+        try:
+            clipboard_text = self.clipboard_get()
+            if clipboard_text:
+                self.txt_code.delete("1.0", "end")
+                self.txt_code.insert("1.0", clipboard_text)
+        except Exception as e:
+            messagebox.showwarning("Clipboard Warning", f"Could not access clipboard: {e}")
 
     def apply_update(self):
         code = self.txt_code.get("1.0", "end-1c").strip()
@@ -249,6 +312,7 @@ class MatrixArchiveSuite(ctk.CTk):
         self.file_vars = {}
         self.checkbox_widgets = []
         self.is_processing = False
+        self.is_scanning = False
 
         self._apply_appearance_backgrounds()
         self._build_matrix_ui()
@@ -309,7 +373,7 @@ class MatrixArchiveSuite(ctk.CTk):
         sys.exit()
 
     def open_hot_updater(self):
-        HotCodeUpdaterModal(self, SCRIPT_FILE, self.restart_application)
+        HotCodeUpdaterModal(self, SCRIPT_FILE, self.restart_application, self.current_theme_color, self.current_appearance)
 
     def create_desktop_shortcut_now(self):
         desktop_dir = ""
@@ -335,19 +399,6 @@ class MatrixArchiveSuite(ctk.CTk):
             if process_and_save_ico(img_p, APP_ICON_FILE):
                 try:
                     self.iconbitmap(APP_ICON_FILE)
-                    
-                    desktop_dir = ""
-                    try:
-                        import winreg
-                        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
-                        desktop_dir, _ = winreg.QueryValueEx(key, "Desktop")
-                        desktop_dir = os.path.expandvars(desktop_dir)
-                    except Exception:
-                        desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
-
-                    desktop_lnk = os.path.join(desktop_dir, "Matrix Storage Suite.lnk")
-                    if os.path.exists(desktop_lnk):
-                        make_desktop_shortcut(SCRIPT_FILE, desktop_lnk, icon_path=APP_ICON_FILE)
                     messagebox.showinfo("Icon Updated", "App icon generated and applied successfully!")
                 except Exception as e:
                     messagebox.showwarning("Warning", f"Icon saved, restart app to fully reflect: {e}")
@@ -371,7 +422,6 @@ class MatrixArchiveSuite(ctk.CTk):
     def _build_matrix_ui(self):
         f = FONT_PROFILES.get(self.current_font_profile, FONT_PROFILES["Retro Matrix (Consolas)"])
 
-        # Main header container
         self.header_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=12, border_width=1, border_color=self.panel_border)
         self.header_frame.pack(fill="x", padx=20, pady=(12, 6))
 
@@ -384,7 +434,7 @@ class MatrixArchiveSuite(ctk.CTk):
         ctrl_top_box = ctk.CTkFrame(top_bar, fg_color="transparent")
         ctrl_top_box.pack(side="right", padx=4, pady=4)
 
-        self.btn_shortcut = ctk.CTkButton(ctrl_top_box, text="📌 DESKTOP SHORTCUT", width=145, font=f["ui_sm"], fg_color="#1e293b", hover_color="#334155", command=self.create_desktop_shortcut_now)
+        self.btn_shortcut = ctk.CTkButton(ctrl_top_box, text="📌 SHORTCUT", width=110, font=f["ui_sm"], fg_color="#1e293b", hover_color="#334155", command=self.create_desktop_shortcut_now)
         self.btn_shortcut.pack(side="left", padx=3)
 
         self.btn_change_icon = ctk.CTkButton(ctrl_top_box, text="🖼️ ICON", width=70, font=f["ui_sm"], fg_color="#581c87", hover_color="#6b21a8", command=self.change_app_icon_live)
@@ -416,7 +466,6 @@ class MatrixArchiveSuite(ctk.CTk):
         )
         self.mode_switcher.pack(fill="x", expand=True, padx=4)
 
-        # Working directory input section
         self.dir_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.dir_frame.pack(fill="x", padx=20, pady=4)
 
@@ -430,7 +479,6 @@ class MatrixArchiveSuite(ctk.CTk):
         self.btn_browse = ctk.CTkButton(self.dir_frame, text="[📁 BROWSE]", width=120, font=f["ui_bold"], fg_color="#1e293b", hover_color="#334155", command=self.browse_directory, height=34)
         self.btn_browse.pack(side="right", padx=(6, 14), pady=8)
 
-        # Operational switches
         self.opts_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.opts_frame.pack(fill="x", padx=20, pady=4)
         self.opts_frame.grid_columnconfigure(0, weight=1)
@@ -457,7 +505,6 @@ class MatrixArchiveSuite(ctk.CTk):
         self.compress_level_menu = ctk.CTkOptionMenu(self.opts_frame, values=["Ultra (9 - Highest Ratio)", "Maximum (7 - High)", "Normal (5 - Balanced)", "Fast (3 - Quick)", "Store (0 - Packing Only)"], font=f["ui_bold"], dropdown_font=f["ui_bold"], height=32, command=lambda _: self.save_config())
         self.compress_level_menu.set(self.config.get("compress_level", "Ultra (9 - Highest Ratio)"))
 
-        # Target item selection list
         self.list_lbl = ctk.CTkLabel(self, text=">>> DETECTED ARCHIVES PAYLOAD:", anchor="w", font=f["ui_bold"], text_color=self.text_muted)
         self.list_lbl.pack(fill="x", padx=22, pady=(4, 2))
 
@@ -469,7 +516,6 @@ class MatrixArchiveSuite(ctk.CTk):
         self.progress.configure(fg_color="#334155" if self.current_appearance == "Dark" else "#94a3b8")
         self.progress.pack(fill="x", padx=20, pady=(8, 4))
 
-        # Console logs
         console_lbl = ctk.CTkLabel(self, text=">>> SYSTEM ACTIVITY LOG:", anchor="w", font=f["ui_bold"], text_color=self.text_muted)
         console_lbl.pack(fill="x", padx=22, pady=(4, 2))
 
@@ -482,7 +528,6 @@ class MatrixArchiveSuite(ctk.CTk):
         self.console.tag_config("gold", foreground="#facc15")
         self.console.tag_config("ghost", foreground="#94a3b8")
 
-        # Bottom action triggers
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(0, 14))
 
@@ -631,19 +676,30 @@ class MatrixArchiveSuite(ctk.CTk):
         return total_size
 
     def refresh_file_list(self):
+        if self.is_scanning: return
         custom_path = self.dir_entry.get().strip()
         if os.path.isdir(custom_path):
             self.target_dir = os.path.abspath(custom_path)
-
-        for widget in self.scroll_frame.winfo_children(): widget.destroy()
-        self.file_vars.clear()
-        self.checkbox_widgets.clear()
 
         if not os.path.exists(self.target_dir):
             self.log(f"[WARN] Invalid Path: {self.target_dir}", "crimson")
             return
 
-        all_items = os.listdir(self.target_dir)
+        self.is_scanning = True
+        self.btn_refresh.configure(state="disabled", text="[SCANNING...]")
+
+        for widget in self.scroll_frame.winfo_children(): widget.destroy()
+        self.file_vars.clear()
+        self.checkbox_widgets.clear()
+
+        threading.Thread(target=self._scan_thread_worker, daemon=True).start()
+
+    def _scan_thread_worker(self):
+        try:
+            all_items = os.listdir(self.target_dir)
+        except Exception:
+            all_items = []
+
         if self.active_mode == "EXTRACT":
             targets = [f for f in all_items if f.lower().endswith(ARCHIVE_EXTS)]
         else:
@@ -651,26 +707,39 @@ class MatrixArchiveSuite(ctk.CTk):
                        and not f.startswith('.') and not (os.path.isfile(os.path.join(self.target_dir, f)) and f.lower().endswith(ARCHIVE_EXTS))
                        and not f.endswith(('.py', '.pyw', '.exe', '.ico', '.bat'))]
 
+        processed = []
+        for name in targets:
+            item_path = os.path.join(self.target_dir, name)
+            size_mb = self.get_path_size(item_path) / (1024 * 1024)
+            is_dir = os.path.isdir(item_path)
+            processed.append((name, size_mb, is_dir))
+
+        self.after(0, lambda: self._render_file_list(processed))
+
+    def _render_file_list(self, targets):
         f = FONT_PROFILES.get(self.current_font_profile, FONT_PROFILES["Retro Matrix (Consolas)"])
         if not targets:
             empty_msg = "[!] NO ARCHIVES LOCATED." if self.active_mode == "EXTRACT" else "[!] NO RAW FILES/FOLDERS FOR COMPRESSION."
             lbl = ctk.CTkLabel(self.scroll_frame, text=empty_msg, font=f["ui_bold"], text_color=self.text_muted)
             lbl.pack(pady=35)
-            return
+        else:
+            palette = THEME_PALETTES[self.current_theme_color]
+            for name, size_mb, is_dir in targets:
+                icon_tag = "📁" if is_dir else "📄"
+                var = ctk.BooleanVar(value=True)
+                chk = ctk.CTkCheckBox(
+                    self.scroll_frame, text=f"{icon_tag} {name:<45} [{size_mb:>7.2f} MB]",
+                    variable=var, font=f["file"], text_color=self.text_main,
+                    fg_color=palette["primary"], hover_color=palette["hover"], checkmark_color="#080b0e"
+                )
+                chk.pack(anchor="w", padx=12, pady=4)
+                self.file_vars[name] = var
+                self.checkbox_widgets.append(chk)
 
-        palette = THEME_PALETTES[self.current_theme_color]
-        for name in targets:
-            item_path = os.path.join(self.target_dir, name)
-            size_mb = self.get_path_size(item_path) / (1024 * 1024)
-            icon_tag = "📁" if os.path.isdir(item_path) else "📄"
+            self.log(f"[SYS] Indexed {len(targets)} item(s) in: {self.target_dir} ({self.active_mode})", "cyan")
 
-            var = ctk.BooleanVar(value=True)
-            chk = ctk.CTkCheckBox(self.scroll_frame, text=f"{icon_tag} {name:<45} [{size_mb:>7.2f} MB]", variable=var, font=f["file"], text_color=self.text_main, fg_color=palette["primary"], hover_color=palette["hover"], checkmark_color="#080b0e")
-            chk.pack(anchor="w", padx=12, pady=5)
-            self.file_vars[name] = var
-            self.checkbox_widgets.append(chk)
-
-        self.log(f"[SYS] Indexed {len(targets)} item(s) in: {self.target_dir} ({self.active_mode})", "cyan")
+        self.btn_refresh.configure(state="normal", text="[⟳ SCAN DIRECTORY]")
+        self.is_scanning = False
 
     def resolve_extract_dest(self, filename):
         name_without_ext = os.path.splitext(filename)[0]
