@@ -1,44 +1,53 @@
-# ArchiveSuite :)
+# ArchiveSuite
 
-A clean, lightweight, and customizable archive manager built with Python and CustomTkinter.
-
-Yup, it handles both batch extraction and compression without the clutter. I built this to make managing archives quick and straightforward, and I hope that you benefit from my small project!
+A modern, high-performance archive manager and batch compression suite built with Python and CustomTkinter. Designed to handle extraction and packing workflows with zero clutter and blazing-fast disk indexing.
 
 ---
 
-### Features
+## Features
 
-* **Dual-Engine:** Extract archives (.zip, .7z, .rar) or batch-compress raw files/folders directly.
-* **Auto-Purge & Isolation:** Automatically delete source files post-processing or isolate contents into dedicated subfolders.
-* **Custom UI Profiles:** Switch between 10 typography fonts, 6 vibrant color palettes, and Light/Dark modes on the fly.
-* **Desktop Shortcut & Icon Customizer:** Generate desktop shortcuts and convert any standard image into an app icon automatically.
-* **Live In-App Updater:** Inject code updates and restart the tool directly from the interface.
-* **Dependency Self-Healer:** Automatically detects missing packages and offers a 1-click install.
-
----
-
-### Requirements & Easy Setup
-
-You can install the requirements manually:
-
-pip install -r requirements.txt
-
-Or yup, you can just double-click **setup.bat**! It will install everything via CMD, launch the app, and delete itself right after :)
-
-> **Note:** For .7z and .rar operations, ensure **7-Zip** is installed and accessible in your system PATH.
+- **Dual-Engine Pipeline:** Seamlessly extract archives (`.zip`, `.7z`, `.rar`) or batch-compress raw files and folders directly.
+- **Ultra-Fast Sizing Engine:** Multi-threaded non-blocking directory scanner with Windows junction/symlink loop protection.
+- **Auto-Purge & Payload Hubs:** Option to automatically delete source files post-processing or route outputs to clean dedicated payload directories.
+- **Modern Minimalist UI:** Sleek card row layout with pill size badges, live color palette switching, and typography font profiles.
+- **In-App Hot Updater:** Inspect and inject live code updates directly from within the application interface.
+- **Desktop Link & Icon Generator:** 1-click desktop shortcut builder and automated image-to-ICO icon converter.
+- **Dependency Self-Healer:** Automatically detects missing packages on startup with automated 1-click installer.
 
 ---
 
-### Quick Start
+## Installation & Setup
 
-After setting up the dependencies, run:
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/raed-alzahrani/ArchiveSuite.git](https://github.com/raed-alzahrani/ArchiveSuite.git)
+   cd ArchiveSuite
+   ```
 
-python main.pyw
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Yup, that's it! Everything saves locally in config.json without touching hidden system directories.
+3. **Run the application:**
+   ```bash
+   python main.pyw
+   ```
+   *(On Windows, double-click `main.pyw` directly without opening a terminal window).*
+
+> **Note:** For handling `.7z` and `.rar` archives, ensure [7-Zip](https://www.7-zip.org/) is installed on your system.
 
 ---
 
-### License
+## Requirements
 
-Distributed under the MIT License. Feel free to tweak and use it however you like :)
+- Python 3.8+
+- `customtkinter >= 5.2.0`
+- `pillow >= 10.0.0`
+- `py7zr >= 0.20.0`
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

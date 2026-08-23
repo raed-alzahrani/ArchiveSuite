@@ -1,0 +1,21 @@
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary installer batches
+*.bat
+_install_*.bat
+
+# App runtime configs & storage state
+config.json
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# IDE configurations
+.vscode/
+.idea/

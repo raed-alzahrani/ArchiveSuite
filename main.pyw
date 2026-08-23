@@ -5,6 +5,8 @@ import shutil
 import threading
 import zipfile
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
+import tkinter as tk
 from tkinter import filedialog, messagebox
 
 # Auto-check dependencies
@@ -22,25 +24,23 @@ for mod, pkg in REQUIRED_LIBS.items():
         missing.append(pkg)
 
 if missing:
-    import tkinter as tk
-
     root = tk.Tk()
     root.title("Missing Requirements")
     root.geometry("450x260")
     root.resizable(False, False)
-    root.configure(bg="#111827")
+    root.configure(bg="#0b0f17")
 
     ws = root.winfo_screenwidth()
     hs = root.winfo_screenheight()
     root.geometry(f"450x260+{int((ws-450)/2)}+{int((hs-260)/2)}")
 
-    tk.Label(root, text="Missing Python Packages", font=("Segoe UI", 12, "bold"), fg="#f87171", bg="#111827").pack(pady=(20, 5))
-    tk.Label(root, text="The following dependencies need to be installed:", font=("Segoe UI", 9), fg="#9ca3af", bg="#111827").pack()
+    tk.Label(root, text="Missing Python Packages", font=("Segoe UI", 12, "bold"), fg="#f87171", bg="#0b0f17").pack(pady=(20, 5))
+    tk.Label(root, text="The following dependencies need to be installed:", font=("Segoe UI", 9), fg="#94a3b8", bg="#0b0f17").pack()
 
-    box = tk.Frame(root, bg="#1f2937", bd=1, relief="solid")
+    box = tk.Frame(root, bg="#121926", bd=1, relief="solid")
     box.pack(fill="x", padx=30, pady=10)
     for pkg in missing:
-        tk.Label(box, text=f"• {pkg}", font=("Consolas", 10, "bold"), fg="#34d399", bg="#1f2937").pack(anchor="w", padx=12, pady=2)
+        tk.Label(box, text=f"• {pkg}", font=("Consolas", 10, "bold"), fg="#10b981", bg="#121926").pack(anchor="w", padx=12, pady=2)
 
     def install_pkgs():
         root.destroy()
@@ -65,10 +65,10 @@ exit
         subprocess.Popen(f'start "" "{bat_file}"', shell=True)
         sys.exit()
 
-    btns = tk.Frame(root, bg="#111827")
+    btns = tk.Frame(root, bg="#0b0f17")
     btns.pack(fill="x", padx=30, pady=(10, 15))
-    tk.Button(btns, text="Cancel", font=("Segoe UI", 9), bg="#374151", fg="#fff", bd=0, padx=14, pady=5, command=sys.exit).pack(side="left")
-    tk.Button(btns, text="Install Packages", font=("Segoe UI", 9, "bold"), bg="#059669", fg="#fff", bd=0, padx=14, pady=5, command=install_pkgs).pack(side="right")
+    tk.Button(btns, text="Cancel", font=("Segoe UI", 9), bg="#1e293b", fg="#fff", bd=0, padx=14, pady=5, command=sys.exit).pack(side="left")
+    tk.Button(btns, text="Install Packages", font=("Segoe UI", 9, "bold"), bg="#10b981", fg="#042f2e", bd=0, padx=14, pady=5, command=install_pkgs).pack(side="right")
     
     root.mainloop()
     sys.exit()
@@ -83,34 +83,124 @@ ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
 ARCHIVE_FORMATS = ('.zip', '.7z', '.rar')
 IMAGE_FORMATS = (('Images', '*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.ico'), ('All Files', '*.*'))
 
-THEMES = {
-    "Green": {"primary": "#10b981", "hover": "#059669", "btn_bg": "#064e3b", "btn_hover": "#047857"},
-    "Red": {"primary": "#f43f5e", "hover": "#e11d48", "btn_bg": "#881337", "btn_hover": "#9f1239"},
-    "Blue": {"primary": "#0ea5e9", "hover": "#0284c7", "btn_bg": "#0c4a6e", "btn_hover": "#0369a1"},
-    "Yellow": {"primary": "#eab308", "hover": "#ca8a04", "btn_bg": "#713f12", "btn_hover": "#854d0e"},
-    "Purple": {"primary": "#a855f7", "hover": "#9333ea", "btn_bg": "#581c87", "btn_hover": "#6b21a8"},
-    "Teal": {"primary": "#14b8a6", "hover": "#0d9488", "btn_bg": "#134e4a", "btn_hover": "#115e59"}
+FONT_PROFILES = {
+    "Futuristic (Bahnschrift)": {
+        "title": ("Bahnschrift", 16, "bold"),
+        "ui_bold": ("Bahnschrift", 12, "bold"),
+        "ui_sm": ("Bahnschrift", 11, "bold"),
+        "row_main": ("Bahnschrift", 12, "bold"),
+        "badge": ("Consolas", 10, "bold"),
+        "mono": ("Consolas", 11, "bold")
+    },
+    "Modern Heavy (Segoe UI)": {
+        "title": ("Segoe UI", 16, "bold"),
+        "ui_bold": ("Segoe UI", 12, "bold"),
+        "ui_sm": ("Segoe UI", 11, "bold"),
+        "row_main": ("Segoe UI", 12, "bold"),
+        "badge": ("Consolas", 10, "bold"),
+        "mono": ("Consolas", 11, "bold")
+    },
+    "Cyber Terminal (Cascadia Mono)": {
+        "title": ("Cascadia Mono", 15, "bold"),
+        "ui_bold": ("Cascadia Mono", 11, "bold"),
+        "ui_sm": ("Cascadia Mono", 10, "bold"),
+        "row_main": ("Cascadia Mono", 11, "bold"),
+        "badge": ("Cascadia Mono", 10, "bold"),
+        "mono": ("Cascadia Mono", 10, "bold")
+    },
+    "Arcade Punch (Trebuchet MS)": {
+        "title": ("Trebuchet MS", 16, "bold"),
+        "ui_bold": ("Trebuchet MS", 12, "bold"),
+        "ui_sm": ("Trebuchet MS", 11, "bold"),
+        "row_main": ("Trebuchet MS", 12, "bold"),
+        "badge": ("Consolas", 10, "bold"),
+        "mono": ("Consolas", 11, "bold")
+    },
+    "Clean Solid (Arial)": {
+        "title": ("Arial", 16, "bold"),
+        "ui_bold": ("Arial", 12, "bold"),
+        "ui_sm": ("Arial", 11, "bold"),
+        "row_main": ("Arial", 12, "bold"),
+        "badge": ("Consolas", 10, "bold"),
+        "mono": ("Consolas", 11, "bold")
+    }
 }
 
-FONTS = {
-    "Segoe UI": {"title": ("Segoe UI", 16, "bold"), "ui": ("Segoe UI", 11, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Consolas": {"title": ("Consolas", 16, "bold"), "ui": ("Consolas", 11, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Cascadia Mono": {"title": ("Cascadia Mono", 14, "bold"), "ui": ("Cascadia Mono", 10, "bold"), "mono": ("Cascadia Mono", 10, "bold")},
-    "Lucida Console": {"title": ("Lucida Console", 14, "bold"), "ui": ("Lucida Console", 10, "bold"), "mono": ("Lucida Console", 10, "bold")},
-    "Arial": {"title": ("Arial", 15, "bold"), "ui": ("Arial", 11, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Trebuchet MS": {"title": ("Trebuchet MS", 15, "bold"), "ui": ("Trebuchet MS", 11, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Impact": {"title": ("Impact", 17), "ui": ("Impact", 12), "mono": ("Consolas", 11, "bold")},
-    "Century Gothic": {"title": ("Century Gothic", 15, "bold"), "ui": ("Century Gothic", 10, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Bahnschrift": {"title": ("Bahnschrift", 15, "bold"), "ui": ("Bahnschrift", 11, "bold"), "mono": ("Consolas", 11, "bold")},
-    "Courier New": {"title": ("Courier New", 15, "bold"), "ui": ("Courier New", 10, "bold"), "mono": ("Courier New", 10, "bold")}
+THEMES = {
+    "Emerald": {
+        "primary": "#10b981", "hover": "#059669", "btn_bg": "#064e3b", "btn_hover": "#047857",
+        "menu_bg": "#064e3b", "menu_btn": "#10b981", "menu_hover": "#059669",
+        "badge_dark": "#0c2822", "badge_text_dark": "#34d399", "badge_light": "#d1fae5", "badge_text_light": "#065f46"
+    },
+    "Nordic Blue": {
+        "primary": "#38bdf8", "hover": "#0ea5e9", "btn_bg": "#0c4a6e", "btn_hover": "#0369a1",
+        "menu_bg": "#0c4a6e", "menu_btn": "#38bdf8", "menu_hover": "#0284c7",
+        "badge_dark": "#0e2c45", "badge_text_dark": "#7dd3fc", "badge_light": "#e0f2fe", "badge_text_light": "#0369a1"
+    },
+    "Amethyst": {
+        "primary": "#c084fc", "hover": "#9333ea", "btn_bg": "#581c87", "btn_hover": "#6b21a8",
+        "menu_bg": "#581c87", "menu_btn": "#c084fc", "menu_hover": "#9333ea",
+        "badge_dark": "#2e1845", "badge_text_dark": "#d8b4fe", "badge_light": "#f3e8ff", "badge_text_light": "#6b21a8"
+    }
 }
+
+THEME_MIGRATION = {
+    "Green": "Emerald",
+    "Blue": "Nordic Blue",
+    "Purple": "Amethyst",
+    "Red": "Emerald",
+    "Yellow": "Emerald",
+    "Teal": "Emerald"
+}
+
+def format_size(bytes_size):
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes_size < 1024.0:
+            return f"{bytes_size:3.1f} {unit}"
+        bytes_size /= 1024.0
+    return f"{bytes_size:.1f} PB"
+
+def calculate_size_ultra_fast(target_path):
+    if not os.path.exists(target_path):
+        return 0
+
+    try:
+        st = os.lstat(target_path)
+        if getattr(st, 'st_file_attributes', 0) & 0x400 or os.path.islink(target_path):
+            return 0
+        if not os.path.isdir(target_path):
+            return st.st_size
+    except (OSError, PermissionError):
+        return 0
+
+    total_bytes = 0
+    stack = [target_path]
+
+    while stack:
+        current_dir = stack.pop()
+        try:
+            with os.scandir(current_dir) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stat_res = entry.stat(follow_symlinks=False)
+                            if not (stat_res.st_file_attributes & 0x400):
+                                stack.append(entry.path)
+                        else:
+                            total_bytes += entry.stat(follow_symlinks=False).st_size
+                    except (PermissionError, OSError):
+                        continue
+        except (PermissionError, OSError):
+            continue
+
+    return total_bytes
 
 def convert_to_icon(src_image, out_icon):
     try:
         img = Image.open(src_image).convert("RGBA")
         dim = min(img.size)
         left = (img.width - dim) // 2
-        top = (img.height - dim) // 2
+        top = (height := img.height - dim) // 2
         cropped = img.crop((left, top, left + dim, top + dim))
         cropped.save(out_icon, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
         return True
@@ -144,21 +234,21 @@ def create_shortcut(target, destination, icon_path=None):
         return False
 
 class CodeUpdateDialog(ctk.CTkToplevel):
-    def __init__(self, parent, target_file, on_success, theme_name="Green", appearance_mode="Dark"):
+    def __init__(self, parent, target_file, on_success, theme_name="Emerald", appearance_mode="Dark"):
         super().__init__(parent)
         self.title("Script Updater")
         self.geometry("840x600")
         self.target_file = target_file
         self.on_success = on_success
-        self.palette = THEMES.get(theme_name, THEMES["Green"])
+        self.palette = THEMES.get(theme_name, THEMES["Emerald"])
         
-        self.configure(fg_color="#0f172a" if appearance_mode == "Dark" else "#e2e8f0")
+        self.configure(fg_color="#0b0f17" if appearance_mode == "Dark" else "#e2e8f0")
         self.transient(parent)
         self.grab_set()
 
         pri = self.palette["primary"]
         txt_main = "#ffffff" if appearance_mode == "Dark" else "#0f172a"
-        inner_bg = "#020617" if appearance_mode == "Dark" else "#f1f5f9"
+        inner_bg = "#080c12" if appearance_mode == "Dark" else "#f1f5f9"
 
         header_box = ctk.CTkFrame(self, fg_color="transparent")
         header_box.pack(fill="x", padx=20, pady=(15, 6))
@@ -242,11 +332,18 @@ class ArchiveSuiteApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Archive Suite")
-        self.minsize(1050, 750)
+        self.minsize(980, 680)
 
         self.config = self.load_config()
-        self.current_theme = self.config.get("theme", "Green")
-        self.current_font = self.config.get("font", "Segoe UI")
+        raw_theme = self.config.get("theme", "Emerald")
+        self.current_theme = THEME_MIGRATION.get(raw_theme, raw_theme)
+        if self.current_theme not in THEMES:
+            self.current_theme = "Emerald"
+
+        self.current_font = self.config.get("font_profile", "Futuristic (Bahnschrift)")
+        if self.current_font not in FONT_PROFILES:
+            self.current_font = "Futuristic (Bahnschrift)"
+
         self.appearance_mode = self.config.get("appearance", "Dark")
         self.working_dir = self.config.get("working_dir", BASE_DIR)
         self.mode = self.config.get("mode", "EXTRACT")
@@ -259,17 +356,17 @@ class ArchiveSuiteApp(ctk.CTk):
             try: self.iconbitmap(ICON_PATH)
             except Exception: pass
 
-        saved_geom = self.config.get("geometry", "1120x900")
+        saved_geom = self.config.get("geometry", "1020x720")
         try: self.geometry(saved_geom)
-        except Exception: self.geometry("1120x900")
+        except Exception: self.geometry("1020x720")
 
         if self.config.get("maximized", False):
             self.after(100, lambda: self.state("zoomed"))
 
         self.file_vars = {}
-        self.checkbox_refs = []
         self.is_scanning = False
 
+        self._apply_appearance_backgrounds()
         self.setup_ui()
         self.apply_theme(self.current_theme)
         self.apply_font(self.current_font)
@@ -282,8 +379,8 @@ class ArchiveSuiteApp(ctk.CTk):
 
     def load_config(self):
         defaults = {
-            "geometry": "1120x900", "maximized": False, "font": "Segoe UI",
-            "theme": "Green", "appearance": "Dark", "mode": "EXTRACT",
+            "geometry": "1020x720", "maximized": False, "font_profile": "Futuristic (Bahnschrift)",
+            "theme": "Emerald", "appearance": "Dark", "mode": "EXTRACT",
             "working_dir": BASE_DIR, "auto_purge": True, "isolate_dir": True,
             "use_hub": True, "comp_format": ".7z", "comp_level": "Ultra (9)"
         }
@@ -292,13 +389,15 @@ class ArchiveSuiteApp(ctk.CTk):
                 with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                     defaults.update(json.load(f))
             except Exception: pass
+        t = defaults.get("theme", "Emerald")
+        defaults["theme"] = THEME_MIGRATION.get(t, t if t in THEMES else "Emerald")
         return defaults
 
     def save_config(self):
         is_zoomed = (self.state() == "zoomed")
-        geom = self.config.get("geometry", "1120x900") if is_zoomed else self.geometry()
+        geom = self.config.get("geometry", "1020x720") if is_zoomed else self.geometry()
         self.config = {
-            "geometry": geom, "maximized": is_zoomed, "font": self.current_font,
+            "geometry": geom, "maximized": is_zoomed, "font_profile": self.current_font,
             "theme": self.current_theme, "appearance": self.appearance_mode, "mode": self.mode,
             "working_dir": self.working_dir, "auto_purge": self.purge_var.get(),
             "isolate_dir": self.isolate_var.get(), "use_hub": self.hub_var.get(),
@@ -320,58 +419,78 @@ class ArchiveSuiteApp(ctk.CTk):
         self.destroy()
         sys.exit()
 
+    def _apply_appearance_backgrounds(self):
+        if self.appearance_mode == "Dark":
+            self.configure(fg_color="#0b0f17")
+            self.card_bg = "#121926"
+            self.inner_bg = "#080c12"
+            self.panel_border = "#1f293d"
+            self.text_main = "#f8fafc"
+            self.text_muted = "#94a3b8"
+        else:
+            self.configure(fg_color="#f1f5f9")
+            self.card_bg = "#ffffff"
+            self.inner_bg = "#f8fafc"
+            self.panel_border = "#cbd5e1"
+            self.text_main = "#0f172a"
+            self.text_muted = "#64748b"
+
     def setup_ui(self):
-        self.header = ctk.CTkFrame(self, corner_radius=10)
-        self.header.pack(fill="x", padx=16, pady=(12, 6))
+        # 1. Header Frame
+        self.header = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=12, border_width=1, border_color=self.panel_border)
+        self.header.pack(fill="x", padx=16, pady=(12, 4))
 
         top_row = ctk.CTkFrame(self.header, fg_color="transparent")
-        top_row.pack(fill="x", padx=10, pady=(8, 4))
+        top_row.pack(fill="x", padx=12, pady=(8, 4))
 
         self.app_title = ctk.CTkLabel(top_row, text="Archive Suite")
-        self.app_title.pack(side="left", padx=6)
+        self.app_title.pack(side="left", padx=4)
 
         ctrls = ctk.CTkFrame(top_row, fg_color="transparent")
         ctrls.pack(side="right")
 
-        self.btn_shortcut = ctk.CTkButton(ctrls, text="Create Shortcut", width=110, fg_color="#334155", hover_color="#475569", command=self.create_desktop_shortcut)
-        self.btn_shortcut.pack(side="left", padx=3)
+        self.btn_shortcut = ctk.CTkButton(ctrls, text="Shortcut", width=90, height=30, fg_color="#1e293b", hover_color="#334155", command=self.create_desktop_shortcut)
+        self.btn_shortcut.pack(side="left", padx=2)
 
-        self.btn_icon = ctk.CTkButton(ctrls, text="Set Icon", width=80, fg_color="#475569", hover_color="#64748b", command=self.update_icon)
-        self.btn_icon.pack(side="left", padx=3)
+        self.btn_icon = ctk.CTkButton(ctrls, text="Icon", width=65, height=30, fg_color="#1e293b", hover_color="#334155", command=self.update_icon)
+        self.btn_icon.pack(side="left", padx=2)
 
-        self.btn_update = ctk.CTkButton(ctrls, text="Update", width=75, fg_color="#0369a1", hover_color="#0284c7", command=lambda: CodeUpdateDialog(self, os.path.abspath(__file__), self.restart_app, self.current_theme, self.appearance_mode))
-        self.btn_update.pack(side="left", padx=3)
+        self.btn_update = ctk.CTkButton(ctrls, text="Update", width=75, height=30, fg_color="#0369a1", hover_color="#0284c7", command=lambda: CodeUpdateDialog(self, os.path.abspath(__file__), self.restart_app, self.current_theme, self.appearance_mode))
+        self.btn_update.pack(side="left", padx=2)
 
-        self.font_picker = ctk.CTkOptionMenu(ctrls, values=list(FONTS.keys()), width=130, command=self.handle_font_change)
+        self.font_picker = ctk.CTkOptionMenu(ctrls, values=list(FONT_PROFILES.keys()), width=180, height=30, command=self.handle_font_change)
         self.font_picker.set(self.current_font)
-        self.font_picker.pack(side="left", padx=3)
+        self.font_picker.pack(side="left", padx=2)
 
-        self.theme_picker = ctk.CTkOptionMenu(ctrls, values=list(THEMES.keys()), width=95, command=self.handle_theme_change)
+        self.theme_picker = ctk.CTkOptionMenu(ctrls, values=list(THEMES.keys()), width=120, height=30, command=self.handle_theme_change)
         self.theme_picker.set(self.current_theme)
-        self.theme_picker.pack(side="left", padx=3)
+        self.theme_picker.pack(side="left", padx=2)
 
-        self.btn_mode_toggle = ctk.CTkButton(ctrls, text="Mode", width=65, fg_color="#1e293b", hover_color="#334155", command=self.toggle_appearance)
-        self.btn_mode_toggle.pack(side="left", padx=3)
+        self.btn_mode_toggle = ctk.CTkButton(ctrls, text="Dark" if self.appearance_mode == "Dark" else "Light", width=70, height=30, fg_color="#1e293b", hover_color="#334155", command=self.toggle_appearance)
+        self.btn_mode_toggle.pack(side="left", padx=2)
 
         mode_row = ctk.CTkFrame(self.header, fg_color="transparent")
-        mode_row.pack(fill="x", padx=10, pady=(4, 8))
+        mode_row.pack(fill="x", padx=12, pady=(4, 8))
         self.mode_selector = ctk.CTkSegmentedButton(mode_row, values=["Extract Mode", "Compress Mode"], height=36, command=self.handle_mode_change)
         self.mode_selector.pack(fill="x", expand=True)
 
-        self.dir_frame = ctk.CTkFrame(self, corner_radius=8)
+        # 2. Path Selector Frame
+        self.dir_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.dir_frame.pack(fill="x", padx=16, pady=4)
 
-        self.lbl_path = ctk.CTkLabel(self.dir_frame, text="Working Path:")
-        self.lbl_path.pack(side="left", padx=(12, 6), pady=8)
+        self.lbl_path = ctk.CTkLabel(self.dir_frame, text="Working Path:", text_color=self.text_muted)
+        self.lbl_path.pack(side="left", padx=(12, 6), pady=6)
 
-        self.entry_path = ctk.CTkEntry(self.dir_frame)
+        self.entry_path = ctk.CTkEntry(self.dir_frame, height=32, fg_color=self.inner_bg, border_color=self.panel_border, text_color=self.text_main)
         self.entry_path.insert(0, self.working_dir)
-        self.entry_path.pack(side="left", fill="x", expand=True, padx=6, pady=8)
+        self.entry_path.pack(side="left", fill="x", expand=True, padx=4, pady=6)
+        self.entry_path.bind("<Return>", lambda _: self.refresh_list())
 
-        self.btn_browse = ctk.CTkButton(self.dir_frame, text="Browse", width=100, fg_color="#334155", hover_color="#475569", command=self.choose_directory)
-        self.btn_browse.pack(side="right", padx=(6, 12), pady=8)
+        self.btn_browse = ctk.CTkButton(self.dir_frame, text="Browse", width=95, height=32, fg_color="#1e293b", hover_color="#334155", command=self.choose_directory)
+        self.btn_browse.pack(side="right", padx=(4, 10), pady=6)
 
-        self.opts_frame = ctk.CTkFrame(self, corner_radius=8)
+        # 3. Actions & Options Frame
+        self.opts_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.opts_frame.pack(fill="x", padx=16, pady=4)
         self.opts_frame.grid_columnconfigure((0, 1), weight=1)
 
@@ -387,40 +506,50 @@ class ArchiveSuiteApp(ctk.CTk):
         self.chk_isolate = ctk.CTkCheckBox(self.opts_frame, text="Extract each archive to individual subfolder", variable=self.isolate_var, command=self.save_config)
         self.chk_isolate.grid(row=1, column=0, sticky="w", padx=14, pady=(0, 8))
 
-        self.btn_select_all = ctk.CTkButton(self.opts_frame, text="Select / Deselect All", width=140, fg_color="#334155", hover_color="#475569", command=self.toggle_all)
+        self.btn_select_all = ctk.CTkButton(self.opts_frame, text="Toggle All", width=110, height=30, fg_color="#1e293b", hover_color="#334155", command=self.toggle_all)
         self.btn_select_all.grid(row=1, column=1, sticky="e", padx=14, pady=(0, 8))
 
-        self.format_dropdown = ctk.CTkOptionMenu(self.opts_frame, values=[".7z", ".zip"], command=lambda _: self.save_config())
+        self.format_dropdown = ctk.CTkOptionMenu(self.opts_frame, values=[".7z", ".zip"], height=30, command=lambda _: self.save_config())
         self.format_dropdown.set(self.config.get("comp_format", ".7z"))
 
         self.level_dropdown = ctk.CTkOptionMenu(
             self.opts_frame, 
             values=["Ultra (9)", "Maximum (7)", "Normal (5)", "Fast (3)", "Store (0)"], 
+            height=30,
             command=lambda _: self.save_config()
         )
         self.level_dropdown.set(self.config.get("comp_level", "Ultra (9)"))
 
-        self.list_title = ctk.CTkLabel(self, text="Target Items:", anchor="w")
-        self.list_title.pack(fill="x", padx=20, pady=(6, 2))
+        # 4. Scrollable Item Display List
+        self.list_title = ctk.CTkLabel(self, text="Target Items:", text_color=self.text_muted, anchor="w")
+        self.list_title.pack(fill="x", padx=20, pady=(4, 2))
 
-        self.scroll_area = ctk.CTkScrollableFrame(self, height=180, corner_radius=8)
+        self.scroll_area = ctk.CTkScrollableFrame(self, height=190, corner_radius=10, fg_color=self.card_bg, border_width=1, border_color=self.panel_border)
         self.scroll_area.pack(fill="both", expand=True, padx=16, pady=4)
+        self.scroll_area._parent_canvas.bind("<MouseWheel>", self._on_mousewheel, add="+")
 
         self.progress_bar = ctk.CTkProgressBar(self, height=10, corner_radius=4)
         self.progress_bar.set(0)
         self.progress_bar.pack(fill="x", padx=16, pady=(6, 4))
 
-        self.log_view = ctk.CTkTextbox(self, height=130, font=("Consolas", 10), corner_radius=8)
+        self.log_view = ctk.CTkTextbox(self, height=110, corner_radius=8, fg_color=self.inner_bg, border_width=1, border_color=self.panel_border, text_color=self.text_main)
         self.log_view.pack(fill="both", padx=16, pady=(2, 8))
 
+        # 5. Bottom Bar
         bottom_bar = ctk.CTkFrame(self, fg_color="transparent")
-        bottom_bar.pack(fill="x", padx=16, pady=(0, 12))
+        bottom_bar.pack(fill="x", padx=16, pady=(0, 10))
 
-        self.btn_refresh = ctk.CTkButton(bottom_bar, text="Refresh Directory", fg_color="#334155", hover_color="#475569", height=40, command=self.refresh_list)
+        self.btn_refresh = ctk.CTkButton(bottom_bar, text="Refresh Directory", height=38, command=self.refresh_list)
         self.btn_refresh.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-        self.btn_execute = ctk.CTkButton(bottom_bar, text="Start Extraction", height=40, command=self.start_thread)
+        self.btn_execute = ctk.CTkButton(bottom_bar, text="Start Extraction", height=38, command=self.start_thread)
         self.btn_execute.pack(side="right", fill="x", expand=True, padx=(6, 0))
+
+    def _on_mousewheel(self, event):
+        try:
+            self.scroll_area._parent_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        except Exception:
+            pass
 
     def log(self, text):
         self.log_view.insert("end", text + "\n")
@@ -429,54 +558,77 @@ class ArchiveSuiteApp(ctk.CTk):
     def handle_font_change(self, font_name):
         self.apply_font(font_name)
         self.save_config()
+        self.refresh_list()
 
     def handle_theme_change(self, theme_name):
+        if theme_name not in THEMES:
+            theme_name = "Emerald"
         self.apply_theme(theme_name)
         self.save_config()
+        self.refresh_list()
 
     def apply_font(self, font_name):
         self.current_font = font_name
-        f = FONTS.get(font_name, FONTS["Segoe UI"])
+        f = FONT_PROFILES.get(font_name, FONT_PROFILES["Futuristic (Bahnschrift)"])
 
         self.app_title.configure(font=f["title"])
-        self.btn_shortcut.configure(font=f["ui"])
-        self.btn_icon.configure(font=f["ui"])
-        self.btn_update.configure(font=f["ui"])
-        self.font_picker.configure(font=f["ui"], dropdown_font=f["ui"])
-        self.theme_picker.configure(font=f["ui"], dropdown_font=f["ui"])
-        self.btn_mode_toggle.configure(font=f["ui"])
-        self.mode_selector.configure(font=f["ui"])
-        self.lbl_path.configure(font=f["ui"])
+        self.btn_shortcut.configure(font=f["ui_sm"])
+        self.btn_icon.configure(font=f["ui_sm"])
+        self.btn_update.configure(font=f["ui_sm"])
+        self.font_picker.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
+        self.theme_picker.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
+        self.btn_mode_toggle.configure(font=f["ui_bold"])
+        self.mode_selector.configure(font=f["ui_bold"])
+        self.lbl_path.configure(font=f["ui_bold"])
         self.entry_path.configure(font=f["mono"])
-        self.btn_browse.configure(font=f["ui"])
-        self.chk_purge.configure(font=f["ui"])
-        self.chk_hub.configure(font=f["ui"])
-        self.chk_isolate.configure(font=f["ui"])
-        self.btn_select_all.configure(font=f["ui"])
-        self.format_dropdown.configure(font=f["ui"], dropdown_font=f["ui"])
-        self.level_dropdown.configure(font=f["ui"], dropdown_font=f["ui"])
-        self.list_title.configure(font=f["ui"])
-        self.btn_refresh.configure(font=f["ui"])
-        self.btn_execute.configure(font=f["ui"])
-
-        for chk in self.checkbox_refs:
-            chk.configure(font=f["mono"])
+        self.btn_browse.configure(font=f["ui_bold"])
+        self.chk_purge.configure(font=f["ui_bold"])
+        self.chk_hub.configure(font=f["ui_bold"])
+        self.chk_isolate.configure(font=f["ui_bold"])
+        self.btn_select_all.configure(font=f["ui_bold"])
+        self.format_dropdown.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
+        self.level_dropdown.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
+        self.list_title.configure(font=f["ui_bold"])
+        self.log_view.configure(font=f["mono"])
+        self.btn_refresh.configure(font=f["ui_bold"])
+        self.btn_execute.configure(font=f["ui_bold"])
 
     def apply_theme(self, theme_name):
         self.current_theme = theme_name
-        t = THEMES.get(theme_name, THEMES["Green"])
+        palette = THEMES.get(theme_name, THEMES["Emerald"])
+        pri = palette["primary"]
 
-        self.app_title.configure(text_color=t["primary"])
-        self.progress_bar.configure(progress_color=t["primary"])
-        self.mode_selector.configure(selected_color=t["primary"], selected_hover_color=t["hover"])
-        self.btn_execute.configure(fg_color=t["btn_bg"], hover_color=t["btn_hover"], text_color="#fff")
-        self.chk_purge.configure(fg_color=t["primary"], hover_color=t["hover"])
-        self.chk_hub.configure(fg_color=t["primary"], hover_color=t["hover"])
-        self.chk_isolate.configure(fg_color=t["primary"], hover_color=t["hover"])
+        self.app_title.configure(text_color=pri)
+        self.progress_bar.configure(progress_color=pri)
+        self.mode_selector.configure(selected_color=pri, selected_hover_color=palette["hover"])
+        self.btn_execute.configure(fg_color=palette["btn_bg"], hover_color=palette["btn_hover"], border_color=pri, border_width=1, text_color="#fff")
+        self.btn_refresh.configure(fg_color=palette["btn_bg"], hover_color=palette["btn_hover"], border_color=pri, border_width=1, text_color="#fff")
+        
+        self.font_picker.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
+        self.theme_picker.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
+        self.format_dropdown.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
+        self.level_dropdown.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
+
+        self.chk_purge.configure(fg_color=pri, hover_color=palette["hover"])
+        self.chk_hub.configure(fg_color=pri, hover_color=palette["hover"])
+        self.chk_isolate.configure(fg_color=pri, hover_color=palette["hover"])
 
     def toggle_appearance(self):
         self.appearance_mode = "Light" if self.appearance_mode == "Dark" else "Dark"
         ctk.set_appearance_mode(self.appearance_mode)
+        self.btn_mode_toggle.configure(text="Dark" if self.appearance_mode == "Dark" else "Light")
+        self._apply_appearance_backgrounds()
+
+        self.header.configure(fg_color=self.card_bg, border_color=self.panel_border)
+        self.dir_frame.configure(fg_color=self.card_bg, border_color=self.panel_border)
+        self.opts_frame.configure(fg_color=self.card_bg, border_color=self.panel_border)
+        self.scroll_area.configure(fg_color=self.card_bg, border_color=self.panel_border)
+        self.entry_path.configure(fg_color=self.inner_bg, border_color=self.panel_border, text_color=self.text_main)
+        self.log_view.configure(fg_color=self.inner_bg, border_color=self.panel_border, text_color=self.text_main)
+        self.lbl_path.configure(text_color=self.text_muted)
+        self.list_title.configure(text_color=self.text_muted)
+
+        self.apply_theme(self.current_theme)
         self.save_config()
         self.refresh_list()
 
@@ -555,7 +707,6 @@ class ArchiveSuiteApp(ctk.CTk):
 
         for w in self.scroll_area.winfo_children(): w.destroy()
         self.file_vars.clear()
-        self.checkbox_refs.clear()
 
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
@@ -576,35 +727,66 @@ class ArchiveSuiteApp(ctk.CTk):
                 and not f.endswith(('.py', '.pyw', '.exe', '.bat'))
             ]
 
-        processed = []
-        for item in targets:
+        def process_item(item):
             p = os.path.join(self.working_dir, item)
-            size_mb = (os.path.getsize(p) if os.path.isfile(p) else sum(os.path.getsize(os.path.join(d, fl)) for d, _, fls in os.walk(p) for fl in fls)) / (1024 * 1024)
+            size_bytes = calculate_size_ultra_fast(p)
             is_dir = os.path.isdir(p)
-            processed.append((item, size_mb, is_dir))
+            return (item, size_bytes, is_dir)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            processed = list(executor.map(process_item, targets))
 
         self.after(0, lambda: self._render_scanned_items(processed))
 
     def _render_scanned_items(self, targets):
+        for w in self.scroll_area.winfo_children(): w.destroy()
+        self.file_vars.clear()
+
+        f = FONT_PROFILES.get(self.current_font, FONT_PROFILES["Futuristic (Bahnschrift)"])
         if not targets:
-            ctk.CTkLabel(self.scroll_area, text="No items found.", text_color="#64748b").pack(pady=25)
+            ctk.CTkLabel(self.scroll_area, text="No items found.", font=f["ui_bold"], text_color=self.text_muted).pack(pady=25)
         else:
-            t = THEMES.get(self.current_theme, THEMES["Green"])
-            f = FONTS.get(self.current_font, FONTS["Segoe UI"])
-            for item, size_mb, is_dir in targets:
-                icon = "📁" if is_dir else "📄"
+            palette = THEMES.get(self.current_theme, THEMES["Emerald"])
+            badge_bg = palette["badge_dark"] if self.appearance_mode == "Dark" else palette["badge_light"]
+            badge_fg = palette["badge_text_dark"] if self.appearance_mode == "Dark" else palette["badge_text_light"]
+
+            for item, size_bytes, is_dir in targets:
+                icon_tag = "📁" if is_dir else "📄"
+                size_str = format_size(size_bytes)
                 var = ctk.BooleanVar(value=True)
+
+                row_frame = ctk.CTkFrame(self.scroll_area, fg_color="transparent", corner_radius=8)
+                row_frame.pack(fill="x", padx=4, pady=2)
+
+                left_box = ctk.CTkFrame(row_frame, fg_color="transparent")
+                left_box.pack(side="left", fill="x", expand=True, padx=4, pady=3)
+
                 chk = ctk.CTkCheckBox(
-                    self.scroll_area, 
-                    text=f"{icon} {item:<40} [{size_mb:>7.2f} MB]", 
-                    variable=var, 
-                    font=f["mono"],
-                    fg_color=t["primary"], 
-                    hover_color=t["hover"]
+                    left_box, text="", variable=var, width=20,
+                    fg_color=palette["primary"], hover_color=palette["hover"]
                 )
-                chk.pack(anchor="w", padx=10, pady=4)
+                chk.pack(side="left", padx=(4, 6))
+
+                lbl_icon = ctk.CTkLabel(left_box, text=icon_tag, font=("Segoe UI Emoji", 12))
+                lbl_icon.pack(side="left", padx=(0, 6))
+
+                display_name = item if len(item) <= 45 else item[:42] + "..."
+                lbl_name = ctk.CTkLabel(
+                    left_box, text=display_name, font=f["row_main"],
+                    text_color=self.text_main, anchor="w"
+                )
+                lbl_name.pack(side="left", fill="x", expand=True)
+
+                right_box = ctk.CTkFrame(row_frame, fg_color="transparent")
+                right_box.pack(side="right", padx=6, pady=3)
+
+                lbl_size = ctk.CTkLabel(
+                    right_box, text=f" {size_str} ", font=f["badge"],
+                    fg_color=badge_bg, text_color=badge_fg, corner_radius=6, height=24
+                )
+                lbl_size.pack(side="left", padx=4)
+
                 self.file_vars[item] = var
-                self.checkbox_refs.append(chk)
 
             self.log(f"Scanned {len(targets)} item(s) in {self.working_dir}")
 
