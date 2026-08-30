@@ -901,7 +901,6 @@ class ArchiveSuiteApp(ctk.CTk):
 
                 self.file_vars[item] = var
 
-        # Force scrollregion update to fix empty canvas rendering
         self.update_idletasks()
         try:
             canvas = self.scroll_area._parent_canvas
@@ -926,6 +925,7 @@ class ArchiveSuiteApp(ctk.CTk):
         for idx, item in enumerate(items, 1):
             item_path = os.path.join(self.working_dir, item)
             self.log(f"[{idx}/{total}] Processing: {item}")
+            success = False
             try:
                 if self.mode == "EXTRACT":
                     dest = os.path.join(out_hub if self.hub_var.get() else self.working_dir, os.path.splitext(item)[0] if self.isolate_var.get() else "")
@@ -933,9 +933,34 @@ class ArchiveSuiteApp(ctk.CTk):
                     ext = os.path.splitext(item)[1].lower()
 
                     if ext == '.zip':
-                        with zipfile.ZipFile(item_path, 'r') as z: z.extractall(dest)
-                    elif ext in ('.7z', '.rar'):
-                        subprocess.run(["7z", "x", item_path, f"-o{dest}", "-y"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                        with zipfile.ZipFile(item_path, 'r') as z:
+                            z.extractall(dest)
+                        success = True
+                    elif ext == '.7z':
+                        try:
+                            res = subprocess.run(["7z", "x", item_path, f"-o{dest}", "-y"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                            if res.returncode == 0:
+                                success = True
+                        except Exception:
+                            pass
+
+                        if not success:
+                            try:
+                                import py7zr
+                                with py7zr.SevenZipFile(item_path, mode='r') as z:
+                                    z.extractall(dest)
+                                success = True
+                            except Exception as e:
+                                self.log(f"7z extraction error: {e}")
+                    elif ext == '.rar':
+                        try:
+                            res = subprocess.run(["7z", "x", item_path, f"-o{dest}", "-y"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                            if res.returncode == 0:
+                                success = True
+                            else:
+                                self.log("Error: 7-Zip CLI not found or failed. Cannot extract .rar")
+                        except Exception as e:
+                            self.log(f"RAR extraction error: {e}")
                 else:
                     dest_dir = out_hub if self.hub_var.get() else self.working_dir
                     os.makedirs(dest_dir, exist_ok=True)
@@ -946,21 +971,34 @@ class ArchiveSuiteApp(ctk.CTk):
                     if fmt == ".zip":
                         comp = zipfile.ZIP_STORED if level == 0 else zipfile.ZIP_DEFLATED
                         with zipfile.ZipFile(out_archive, 'w', comp, compresslevel=level if level > 0 else None) as z:
-                            if os.path.isfile(item_path): z.write(item_path, arcname=item)
+                            if os.path.isfile(item_path):
+                                z.write(item_path, arcname=item)
                             else:
                                 for root, _, files in os.walk(item_path):
                                     for file in files:
                                         fp = os.path.join(root, file)
                                         z.write(fp, arcname=os.path.join(item, os.path.relpath(fp, item_path)))
+                        success = True
                     elif fmt == ".7z":
-                        subprocess.run(["7z", "a", "-t7z", f"-mx={level}", out_archive, item_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                        try:
+                            res = subprocess.run(["7z", "a", "-t7z", f"-mx={level}", out_archive, item_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                            if res.returncode == 0:
+                                success = True
+                            else:
+                                self.log("Error: 7-Zip CLI execution failed.")
+                        except Exception as e:
+                            self.log(f"7z compression error: {e}")
 
-                if self.purge_var.get():
+                if success and self.purge_var.get():
                     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
                     with self.cache_lock:
                         self.disk_cache.pop(item_path, None)
+                    self.log(f"Done & purged: {item}")
+                elif success:
+                    self.log(f"Done: {item}")
+                else:
+                    self.log(f"Skipped purge due to failure: {item}")
 
-                self.log(f"Done: {item}")
             except Exception as e:
                 self.log(f"Error: {e}")
 
