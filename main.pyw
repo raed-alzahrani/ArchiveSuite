@@ -5,6 +5,8 @@ import shutil
 import threading
 import zipfile
 import subprocess
+import queue
+import time
 from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -79,6 +81,7 @@ import customtkinter as ctk
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
+CACHE_FILE = os.path.join(BASE_DIR, "scan_cache.txt")
 
 ARCHIVE_FORMATS = ('.zip', '.7z', '.rar')
 IMAGE_FORMATS = (('Images', '*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.ico'), ('All Files', '*.*'))
@@ -160,7 +163,29 @@ def format_size(bytes_size):
         bytes_size /= 1024.0
     return f"{bytes_size:.1f} PB"
 
-def calculate_size_ultra_fast(target_path):
+def load_disk_cache():
+    cache = {}
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.strip().split("|")
+                    if len(parts) == 3:
+                        p, mtime, sz = parts
+                        cache[p] = (float(mtime), int(sz))
+        except Exception:
+            pass
+    return cache
+
+def save_disk_cache(cache):
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            for p, (mtime, sz) in cache.items():
+                f.write(f"{p}|{mtime}|{sz}\n")
+    except Exception:
+        pass
+
+def calculate_size_multithreaded(target_path, max_workers=16):
     if not os.path.exists(target_path):
         return 0
 
@@ -174,24 +199,62 @@ def calculate_size_ultra_fast(target_path):
         return 0
 
     total_bytes = 0
-    stack = [target_path]
+    size_lock = threading.Lock()
+    work_q = queue.Queue()
+    work_q.put(target_path)
 
-    while stack:
-        current_dir = stack.pop()
-        try:
-            with os.scandir(current_dir) as entries:
-                for entry in entries:
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
+    active_tasks = 0
+    active_lock = threading.Lock()
+    stop_event = threading.Event()
+
+    def worker():
+        nonlocal total_bytes, active_tasks
+        while not stop_event.is_set():
+            try:
+                current_dir = work_q.get(timeout=0.03)
+            except queue.Empty:
+                with active_lock:
+                    if active_tasks == 0 and work_q.empty():
+                        stop_event.set()
+                        return
+                continue
+
+            with active_lock:
+                active_tasks += 1
+
+            local_bytes = 0
+            try:
+                with os.scandir(current_dir) as entries:
+                    for entry in entries:
+                        try:
                             stat_res = entry.stat(follow_symlinks=False)
-                            if not (stat_res.st_file_attributes & 0x400):
-                                stack.append(entry.path)
-                        else:
-                            total_bytes += entry.stat(follow_symlinks=False).st_size
-                    except (PermissionError, OSError):
-                        continue
-        except (PermissionError, OSError):
-            continue
+                            if getattr(stat_res, 'st_file_attributes', 0) & 0x400:
+                                continue
+                            if entry.is_dir(follow_symlinks=False):
+                                work_q.put(entry.path)
+                            else:
+                                local_bytes += stat_res.st_size
+                        except (PermissionError, OSError):
+                            continue
+            except (PermissionError, OSError):
+                pass
+            finally:
+                if local_bytes > 0:
+                    with size_lock:
+                        total_bytes += local_bytes
+                with active_lock:
+                    active_tasks -= 1
+                work_q.task_done()
+
+    threads = []
+    num_threads = min(max_workers, 24)
+    for _ in range(num_threads):
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
     return total_bytes
 
@@ -200,7 +263,7 @@ def convert_to_icon(src_image, out_icon):
         img = Image.open(src_image).convert("RGBA")
         dim = min(img.size)
         left = (img.width - dim) // 2
-        top = (height := img.height - dim) // 2
+        top = (img.height - dim) // 2
         cropped = img.crop((left, top, left + dim, top + dim))
         cropped.save(out_icon, format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
         return True
@@ -259,13 +322,13 @@ class CodeUpdateDialog(ctk.CTkToplevel):
         actions_box.pack(side="right")
 
         ctk.CTkButton(
-            actions_box, text="📋 Copy Code", width=120, height=28,
+            actions_box, text="Copy Code", width=120, height=28,
             font=("Segoe UI", 11, "bold"), fg_color="#1e293b",
             hover_color="#334155", text_color="#ffffff", command=self.copy_code
         ).pack(side="left", padx=(0, 6))
 
         ctk.CTkButton(
-            actions_box, text="📥 Paste Code", width=120, height=28,
+            actions_box, text="Paste Code", width=120, height=28,
             font=("Segoe UI", 11, "bold"), fg_color=self.palette["btn_bg"],
             hover_color=self.palette["hover"], text_color="#ffffff", command=self.paste_code
         ).pack(side="left")
@@ -335,6 +398,9 @@ class ArchiveSuiteApp(ctk.CTk):
         self.minsize(980, 680)
 
         self.config = self.load_config()
+        self.disk_cache = load_disk_cache()
+        self.cache_lock = threading.Lock()
+
         raw_theme = self.config.get("theme", "Emerald")
         self.current_theme = THEME_MIGRATION.get(raw_theme, raw_theme)
         if self.current_theme not in THEMES:
@@ -347,6 +413,7 @@ class ArchiveSuiteApp(ctk.CTk):
         self.appearance_mode = self.config.get("appearance", "Dark")
         self.working_dir = self.config.get("working_dir", BASE_DIR)
         self.mode = self.config.get("mode", "EXTRACT")
+        self.perf_mode = self.config.get("perf_mode", "Extreme")
 
         if not os.path.exists(self.working_dir):
             self.working_dir = BASE_DIR
@@ -382,7 +449,8 @@ class ArchiveSuiteApp(ctk.CTk):
             "geometry": "1020x720", "maximized": False, "font_profile": "Futuristic (Bahnschrift)",
             "theme": "Emerald", "appearance": "Dark", "mode": "EXTRACT",
             "working_dir": BASE_DIR, "auto_purge": True, "isolate_dir": True,
-            "use_hub": True, "comp_format": ".7z", "comp_level": "Ultra (9)"
+            "use_hub": True, "comp_format": ".7z", "comp_level": "Ultra (9)",
+            "perf_mode": "Extreme"
         }
         if os.path.exists(CONFIG_PATH):
             try:
@@ -401,7 +469,8 @@ class ArchiveSuiteApp(ctk.CTk):
             "theme": self.current_theme, "appearance": self.appearance_mode, "mode": self.mode,
             "working_dir": self.working_dir, "auto_purge": self.purge_var.get(),
             "isolate_dir": self.isolate_var.get(), "use_hub": self.hub_var.get(),
-            "comp_format": self.format_dropdown.get(), "comp_level": self.level_dropdown.get()
+            "comp_format": self.format_dropdown.get(), "comp_level": self.level_dropdown.get(),
+            "perf_mode": self.perf_picker.get()
         }
         try:
             with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
@@ -410,10 +479,12 @@ class ArchiveSuiteApp(ctk.CTk):
 
     def on_close(self):
         self.save_config()
+        save_disk_cache(self.disk_cache)
         self.destroy()
 
     def restart_app(self):
         self.save_config()
+        save_disk_cache(self.disk_cache)
         script = os.path.abspath(__file__)
         subprocess.Popen([sys.executable.replace("python.exe", "pythonw.exe"), script], creationflags=0x08000000 if sys.platform == "win32" else 0)
         self.destroy()
@@ -436,7 +507,6 @@ class ArchiveSuiteApp(ctk.CTk):
             self.text_muted = "#64748b"
 
     def setup_ui(self):
-        # 1. Header Frame
         self.header = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=12, border_width=1, border_color=self.panel_border)
         self.header.pack(fill="x", padx=16, pady=(12, 4))
 
@@ -449,7 +519,7 @@ class ArchiveSuiteApp(ctk.CTk):
         ctrls = ctk.CTkFrame(top_row, fg_color="transparent")
         ctrls.pack(side="right")
 
-        self.btn_shortcut = ctk.CTkButton(ctrls, text="Shortcut", width=90, height=30, fg_color="#1e293b", hover_color="#334155", command=self.create_desktop_shortcut)
+        self.btn_shortcut = ctk.CTkButton(ctrls, text="Shortcut", width=85, height=30, fg_color="#1e293b", hover_color="#334155", command=self.create_desktop_shortcut)
         self.btn_shortcut.pack(side="left", padx=2)
 
         self.btn_icon = ctk.CTkButton(ctrls, text="Icon", width=65, height=30, fg_color="#1e293b", hover_color="#334155", command=self.update_icon)
@@ -458,11 +528,15 @@ class ArchiveSuiteApp(ctk.CTk):
         self.btn_update = ctk.CTkButton(ctrls, text="Update", width=75, height=30, fg_color="#0369a1", hover_color="#0284c7", command=lambda: CodeUpdateDialog(self, os.path.abspath(__file__), self.restart_app, self.current_theme, self.appearance_mode))
         self.btn_update.pack(side="left", padx=2)
 
-        self.font_picker = ctk.CTkOptionMenu(ctrls, values=list(FONT_PROFILES.keys()), width=180, height=30, command=self.handle_font_change)
+        self.perf_picker = ctk.CTkOptionMenu(ctrls, values=["Normal", "Extreme"], width=95, height=30, command=self.handle_perf_change)
+        self.perf_picker.set(self.perf_mode)
+        self.perf_picker.pack(side="left", padx=2)
+
+        self.font_picker = ctk.CTkOptionMenu(ctrls, values=list(FONT_PROFILES.keys()), width=175, height=30, command=self.handle_font_change)
         self.font_picker.set(self.current_font)
         self.font_picker.pack(side="left", padx=2)
 
-        self.theme_picker = ctk.CTkOptionMenu(ctrls, values=list(THEMES.keys()), width=120, height=30, command=self.handle_theme_change)
+        self.theme_picker = ctk.CTkOptionMenu(ctrls, values=list(THEMES.keys()), width=115, height=30, command=self.handle_theme_change)
         self.theme_picker.set(self.current_theme)
         self.theme_picker.pack(side="left", padx=2)
 
@@ -474,7 +548,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.mode_selector = ctk.CTkSegmentedButton(mode_row, values=["Extract Mode", "Compress Mode"], height=36, command=self.handle_mode_change)
         self.mode_selector.pack(fill="x", expand=True)
 
-        # 2. Path Selector Frame
         self.dir_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.dir_frame.pack(fill="x", padx=16, pady=4)
 
@@ -489,7 +562,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.btn_browse = ctk.CTkButton(self.dir_frame, text="Browse", width=95, height=32, fg_color="#1e293b", hover_color="#334155", command=self.choose_directory)
         self.btn_browse.pack(side="right", padx=(4, 10), pady=6)
 
-        # 3. Actions & Options Frame
         self.opts_frame = ctk.CTkFrame(self, fg_color=self.card_bg, corner_radius=10, border_width=1, border_color=self.panel_border)
         self.opts_frame.pack(fill="x", padx=16, pady=4)
         self.opts_frame.grid_columnconfigure((0, 1), weight=1)
@@ -520,7 +592,6 @@ class ArchiveSuiteApp(ctk.CTk):
         )
         self.level_dropdown.set(self.config.get("comp_level", "Ultra (9)"))
 
-        # 4. Scrollable Item Display List
         self.list_title = ctk.CTkLabel(self, text="Target Items:", text_color=self.text_muted, anchor="w")
         self.list_title.pack(fill="x", padx=20, pady=(4, 2))
 
@@ -535,7 +606,6 @@ class ArchiveSuiteApp(ctk.CTk):
         self.log_view = ctk.CTkTextbox(self, height=110, corner_radius=8, fg_color=self.inner_bg, border_width=1, border_color=self.panel_border, text_color=self.text_main)
         self.log_view.pack(fill="both", padx=16, pady=(2, 8))
 
-        # 5. Bottom Bar
         bottom_bar = ctk.CTkFrame(self, fg_color="transparent")
         bottom_bar.pack(fill="x", padx=16, pady=(0, 10))
 
@@ -554,6 +624,11 @@ class ArchiveSuiteApp(ctk.CTk):
     def log(self, text):
         self.log_view.insert("end", text + "\n")
         self.log_view.see("end")
+
+    def handle_perf_change(self, mode):
+        self.perf_mode = mode
+        self.save_config()
+        self.log(f"Performance mode set to: {mode}")
 
     def handle_font_change(self, font_name):
         self.apply_font(font_name)
@@ -575,6 +650,7 @@ class ArchiveSuiteApp(ctk.CTk):
         self.btn_shortcut.configure(font=f["ui_sm"])
         self.btn_icon.configure(font=f["ui_sm"])
         self.btn_update.configure(font=f["ui_sm"])
+        self.perf_picker.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
         self.font_picker.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
         self.theme_picker.configure(font=f["ui_sm"], dropdown_font=f["ui_sm"])
         self.btn_mode_toggle.configure(font=f["ui_bold"])
@@ -604,6 +680,7 @@ class ArchiveSuiteApp(ctk.CTk):
         self.btn_execute.configure(fg_color=palette["btn_bg"], hover_color=palette["btn_hover"], border_color=pri, border_width=1, text_color="#fff")
         self.btn_refresh.configure(fg_color=palette["btn_bg"], hover_color=palette["btn_hover"], border_color=pri, border_width=1, text_color="#fff")
         
+        self.perf_picker.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
         self.font_picker.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
         self.theme_picker.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
         self.format_dropdown.configure(fg_color=palette["menu_bg"], button_color=pri, button_hover_color=palette["hover"])
@@ -711,6 +788,7 @@ class ArchiveSuiteApp(ctk.CTk):
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
     def _scan_worker(self):
+        start_time = time.time()
         try:
             all_items = os.listdir(self.working_dir)
         except Exception:
@@ -721,21 +799,56 @@ class ArchiveSuiteApp(ctk.CTk):
         else:
             targets = [
                 f for f in all_items 
-                if f not in ("_EXTRACTED", "_COMPRESSED", "config.json", "app_icon.ico")
+                if f not in ("_EXTRACTED", "_COMPRESSED", "config.json", "app_icon.ico", "scan_cache.txt")
                 and not f.startswith('.') 
                 and not (os.path.isfile(os.path.join(self.working_dir, f)) and f.lower().endswith(ARCHIVE_FORMATS))
                 and not f.endswith(('.py', '.pyw', '.exe', '.bat'))
             ]
 
+        cpu_threads = os.cpu_count() or 4
+        if self.perf_mode == "Extreme":
+            top_workers = max(16, cpu_threads * 2)
+            sub_workers = 16
+        else:
+            top_workers = 4
+            sub_workers = 2
+
+        cache_hits = 0
+        cache_hits_lock = threading.Lock()
+
         def process_item(item):
+            nonlocal cache_hits
             p = os.path.join(self.working_dir, item)
-            size_bytes = calculate_size_ultra_fast(p)
             is_dir = os.path.isdir(p)
+            try:
+                current_mtime = os.path.getmtime(p)
+            except OSError:
+                current_mtime = 0
+
+            size_bytes = None
+            with self.cache_lock:
+                if p in self.disk_cache:
+                    cached_mtime, cached_sz = self.disk_cache[p]
+                    if abs(cached_mtime - current_mtime) < 0.001:
+                        size_bytes = cached_sz
+                        with cache_hits_lock:
+                            cache_hits += 1
+
+            if size_bytes is None:
+                size_bytes = calculate_size_multithreaded(p, max_workers=sub_workers)
+                with self.cache_lock:
+                    self.disk_cache[p] = (current_mtime, size_bytes)
+
             return (item, size_bytes, is_dir)
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=top_workers) as executor:
             processed = list(executor.map(process_item, targets))
 
+        save_disk_cache(self.disk_cache)
+        elapsed = time.time() - start_time
+        self.after(0, lambda: self.log(
+            f"Indexed {len(targets)} item(s) in {elapsed:.2f}s ({self.perf_mode} mode | Cache hits: {cache_hits}/{len(targets)})"
+        ))
         self.after(0, lambda: self._render_scanned_items(processed))
 
     def _render_scanned_items(self, targets):
@@ -788,7 +901,14 @@ class ArchiveSuiteApp(ctk.CTk):
 
                 self.file_vars[item] = var
 
-            self.log(f"Scanned {len(targets)} item(s) in {self.working_dir}")
+        # Force scrollregion update to fix empty canvas rendering
+        self.update_idletasks()
+        try:
+            canvas = self.scroll_area._parent_canvas
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.yview_moveto(0.0)
+        except Exception:
+            pass
 
         self.btn_refresh.configure(state="normal", text="Refresh Directory")
         self.is_scanning = False
@@ -837,6 +957,8 @@ class ArchiveSuiteApp(ctk.CTk):
 
                 if self.purge_var.get():
                     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
+                    with self.cache_lock:
+                        self.disk_cache.pop(item_path, None)
 
                 self.log(f"Done: {item}")
             except Exception as e:
@@ -844,6 +966,7 @@ class ArchiveSuiteApp(ctk.CTk):
 
             self.progress_bar.set(idx / total)
 
+        save_disk_cache(self.disk_cache)
         self.log("Batch processing complete.")
         self.toggle_ui(True)
         self.refresh_list()
