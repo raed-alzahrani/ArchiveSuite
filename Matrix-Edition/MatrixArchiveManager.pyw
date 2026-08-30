@@ -756,12 +756,37 @@ class MatrixArchiveSuite(ctk.CTk):
         if ext == '.zip':
             with zipfile.ZipFile(file_path, 'r') as archive:
                 archive.extractall(dest_dir)
-        elif ext in ('.7z', '.rar'):
+            return dest_dir
+
+        if ext == '.7z':
+            # محاولة الاستخراج عبر 7z أولاً
+            try:
+                cmd = ["7z", "x", file_path, f"-o{dest_dir}", "-y"]
+                creation_flags = 0x08000000 if sys.platform == "win32" else 0
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags)
+                if res.returncode == 0:
+                    return dest_dir
+            except Exception:
+                pass
+
+            # الاعتماد على py7zr كبديل مدمج
+            try:
+                import py7zr
+                with py7zr.SevenZipFile(file_path, mode='r') as archive:
+                    archive.extractall(dest_dir)
+                return dest_dir
+            except Exception as e:
+                raise RuntimeError(f"Failed to extract .7z archive: {e}")
+
+        if ext == '.rar':
             cmd = ["7z", "x", file_path, f"-o{dest_dir}", "-y"]
             creation_flags = 0x08000000 if sys.platform == "win32" else 0
             res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags)
-            if res.returncode != 0: raise RuntimeError(f"7z Engine failed to extract {ext} archive.")
-        return dest_dir
+            if res.returncode != 0:
+                raise RuntimeError("7-Zip CLI not found or failed to extract .rar archive.")
+            return dest_dir
+
+        raise RuntimeError(f"Unsupported archive format: {ext}")
 
     def get_compression_level_digit(self):
         c = self.compress_level_menu.get()
@@ -792,12 +817,30 @@ class MatrixArchiveSuite(ctk.CTk):
                         for file in files:
                             full_p = os.path.join(root, file)
                             zipf.write(full_p, arcname=os.path.join(item_name, os.path.relpath(full_p, item_path)))
+            return archive_path
 
         elif target_format == ".7z":
             cmd = ["7z", "a", "-t7z", f"-mx={level_digit}", archive_path, item_path]
             creation_flags = 0x08000000 if sys.platform == "win32" else 0
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags)
-            if res.returncode != 0: raise RuntimeError("7z Engine compression failed.")
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation_flags)
+                if res.returncode == 0:
+                    return archive_path
+            except Exception:
+                pass
+
+            # بديل py7zr للضغط في حال تعذر تشغيل 7z
+            try:
+                import py7zr
+                with py7zr.SevenZipFile(archive_path, 'w') as archive:
+                    if os.path.isfile(item_path):
+                        archive.write(item_path, arcname=item_name)
+                    else:
+                        archive.writeall(item_path, arcname=item_name)
+                return archive_path
+            except Exception as e:
+                raise RuntimeError(f"Failed to compress with .7z: {e}")
+
         return archive_path
 
     def run_pipeline(self):
@@ -814,19 +857,24 @@ class MatrixArchiveSuite(ctk.CTk):
         for idx, item_name in enumerate(selected_items, start=1):
             item_path = os.path.join(self.target_dir, item_name)
             self.log(f"[{idx}/{total}] Processing: {item_name}", "gold")
+            success = False
             try:
                 if self.active_mode == "EXTRACT":
                     dest_path = self.extract_file(item_name)
                     self.log(f"  └─► [OK] Extracted To: ./{os.path.relpath(dest_path, self.target_dir)}", "primary")
+                    success = True
                 else:
                     dest_archive = self.compress_item(item_name)
                     self.log(f"  └─► [OK] Packed Into: ./{os.path.relpath(dest_archive, self.target_dir)}", "primary")
+                    success = True
                 
-                if self.delete_var.get():
+                # لا يتم الحذف إلا عند التأكد التام من نجاح الفك أو الضغط
+                if success and self.delete_var.get():
                     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
                     self.log(f"  └─► [PURGED] Source payload deleted.", "ghost")
             except Exception as e:
                 self.log(f"  └─► [FAIL] Error: {str(e)}", "crimson")
+                self.log(f"  └─► [PROTECTED] Source item preserved due to error.", "gold")
 
             self.progress.set(idx / total)
 
