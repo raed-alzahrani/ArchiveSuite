@@ -9,6 +9,7 @@ _install_*.bat
 
 # App runtime configs & storage state
 config.json
+scan_cache.txt
 
 # Environments
 .venv/
