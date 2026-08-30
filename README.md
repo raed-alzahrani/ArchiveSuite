@@ -8,7 +8,8 @@ A modern, high-performance archive manager and batch compression suite built wit
 
 - **Dual-Engine Pipeline:** Seamlessly extract archives (`.zip`, `.7z`, `.rar`) or batch-compress raw files and folders directly.
 - **Parallel Queue Sizing:** Multi-threaded recursive folder scanner backed by `scan_cache.txt` for instantaneous re-indexing.
-- **Hardware Profile Switcher:** Toggle between **Normal** (low overhead) and **Extreme** (full parallel NVMe saturation) directly in the header.- **Auto-Purge & Payload Hubs:** Option to automatically delete source files post-processing or route outputs to clean dedicated payload directories.
+- **Hardware Profile Switcher:** Toggle between **Normal** (low overhead) and **Extreme** (full parallel NVMe saturation) directly in the header.-
+- **Auto-Purge & Payload Hubs:** Option to automatically delete source files post-processing or route outputs to clean dedicated payload directories.
 - **Modern Minimalist UI:** Sleek card row layout with pill size badges, live color palette switching, and typography font profiles.
 - **In-App Hot Updater:** Inspect and inject live code updates directly from within the application interface.
 - **Desktop Link & Icon Generator:** 1-click desktop shortcut builder and automated image-to-ICO icon converter.
